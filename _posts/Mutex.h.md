@@ -1,0 +1,75 @@
+# Mutex.h
+
+## MutexLock
+MutexLock 是对 pthread_mutex_t 的封装，与大多数Muduo里的类一样，MutexLock 也是不可复制的（继承自 noncopyable）。提供的接口有：
+- lock()：加锁 并记录tid为当前线程id
+- unlock()：解锁 并记录tid为0
+- isLockedByThisThread() const：判断当前线程是否持有锁
+- assertLocked() const：断言当前线程持有锁
+- getPthreadMutex()：返回mutex_地址，将地址暴露意味着锁可能被外部修改
+
+```cpp
+class MutexLock : noncopyable {
+public:
+  MutexLock();
+  ~MutexLock(); // 先assert holder==0, 再销毁mutex_
+
+  void lock(); 
+  void unlock(); 
+  bool isLockedByThisThread() const; 
+  void assertLocked() const;         
+  pthread_mutex_t *getPthreadMutex(); 
+
+private:
+  pthread_mutex_t mutex_;
+};
+```
+
+## MutexLockGuard
+MutexLockGuard 是一个RAII类，是栈上锁，利用栈上变量的生命周期管理加锁解锁，没有提供接口。
+
+```cpp
+class MutexLockGuard : noncopyable
+{
+ public:
+  explicit MutexLockGuard(MutexLock& mutex)
+    : mutex_(mutex)
+  {
+    mutex_.lock();
+  }
+  ~MutexLockGuard() RELEASE()
+  {
+    mutex_.unlock();
+  }
+ private:
+  MutexLock& mutex_;
+}
+```
+
+## UnassignGuard
+UnassignGuard是MutexLock的一个内部类，主要用于在条件变量中临时释放锁。
+
+由于pthread.h提供的各个condition_wait会等待时释放锁，结束之后重新加锁，在过程中，如果有其他线程调用了MutexLock的unlock()，就会导致死锁。
+
+UnassignGuard的作用就是在条件变量等待时，暂时将MutexLock的holder置为0，等条件满足后再将holder重新设置为当前线程id。该类也是一个RAII类，构造时将holder置为0，析构时将holder置为当前线程id，没有提供接口。
+
+```cpp
+class MutexLock::UnassignGuard : noncopyable
+{
+ public:
+  // 构造时将传入的锁holder设为0
+  explicit UnassignGuard(MutexLock& owner)
+    : owner_(owner)
+  {
+    owner_.holder_ = 0;
+  }
+  // 析构时将当前线程设为锁holder
+  ~UnassignGuard()
+  {
+    owner_.holder_ = CurrentThread::tid();
+  }
+
+ private:
+  MutexLock& owner_;
+};
+```
