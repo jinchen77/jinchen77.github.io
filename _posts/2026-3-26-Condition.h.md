@@ -1,6 +1,14 @@
-# Condition.h
+---
+title: Condition.h
+date: 2026-3-26 23:53:00
+categories: [技术, 教程]      ## 分类
+tags: [github-pages]   ## 标签
+description: Muduo 库中的条件变量 Condition 的介绍和使用
+---
 
-## Condition
+## Condition.h
+
+### Condition
 
 Condition封装了一个pthread_cond_t和一个MutexLock&，提供的接口有：
 - wait()：利用UnassignGuard来解决pthread_cond_wait会释放锁的问题
